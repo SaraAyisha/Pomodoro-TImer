@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomodoro Timer</title>
+  <style>
+    /* ==== ALL CSS ==== */
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background: #ff6b6b;
+      transition: background 0.5s ease, color 0.5s ease;
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+    }
+    body.light { background: #f0f0f0; color: #222; }
+    .container {
+      text-align: center;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(15px);
+      padding: 40px 50px;
+      border-radius: 20px;
+      width: 350px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+      transition: box-shadow 0.5s ease, border 0.5s ease;
+    }
+    .container:hover { box-shadow: 0 0 20px rgba(255, 255, 255, 0.4); }
+    h1 { font-size: 1.8rem; margin-bottom: 20px; color: inherit; }
+    .popup {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.4); display: flex; justify-content: center;
+      align-items: center; opacity: 0; pointer-events: none;
+      transition: opacity 0.5s ease; z-index: 1000;
+    }
+    .popup.show { opacity: 1; pointer-events: all; }
+    .popup-content {
+      background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px);
+      padding: 30px 40px; border-radius: 15px; text-align: center;
+      transform: scale(0.8); transition: transform 0.3s ease;
+    }
+    .popup.show .popup-content { transform: scale(1); }
+    .popup input {
+      padding: 8px; margin-top: 10px; border-radius: 6px; border: none;
+      width: 100%; text-align: center;
+    }
+    .popup button {
+      margin-top: 15px; padding: 8px 20px; border: none; border-radius: 8px;
+      background: white; cursor: pointer;
+    }
+    .popup button:hover { background: #ddd; }
+    .controls button, .adjust button {
+      margin: 5px; padding: 10px 20px; font-size: 1rem; cursor: pointer;
+      border: none; border-radius: 8px; background: #fff; color: #333;
+      transition: background 0.3s;
+    }
+    .controls button:hover, .adjust button:hover { background: #ddd; }
+    .skip {
+      background: #4dabf7; color: white; box-shadow: 0 0 10px #4dabf7;
+      font-size: 1.2rem; transition: transform 0.2s;
+    }
+    .skip:hover { transform: scale(1.1); box-shadow: 0 0 15px #74c0fc; }
+    #toast {
+      visibility: hidden; min-width: 180px; background-color: #333; color: #fff;
+      text-align: center; border-radius: 5px; padding: 8px;
+      position: absolute; font-size: 0.9rem; opacity: 0;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+      left: 50%; transform: translateX(-50%) translateY(20px);
+      bottom: 100px; z-index: 1000;
+    }
+    #toast.show { visibility: visible; opacity: 1; transform: translateX(-50%) translateY(0); }
+    .bottom-controls {
+      position: fixed; bottom: 20px; right: 20px;
+      display: flex; gap: 15px; z-index: 999;
+    }
+    .color-picker-circle {
+      width: 60px; height: 60px; border-radius: 50%; padding: 5px;
+      background: white; box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      display: flex; justify-content: center; align-items: center;
+    }
+    .color-picker-circle input[type="color"] {
+      width: 100%; height: 100%; padding: 0; border: none;
+      border-radius: 50%; cursor: pointer;
+    }
+    .mode-toggle {
+      width: 60px; height: 60px; border-radius: 50%; border: none;
+      background: white; cursor: pointer; font-size: 1.4rem;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      display: flex; justify-content: center; align-items: center;
+    }
+    .mode-toggle:hover { background: #ddd; }
+  </style>
+</head>
+<body>
+  <!-- Transparent Popup -->
+  <div id="namePopup" class="popup">
+    <div class="popup-content">
+      <h2>What's your name?</h2>
+      <input type="text" id="popupNameInput" placeholder="Enter your name" />
+      <button id="saveName">Start</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h1 id="greeting">Pomodoro Timer</h1>
+    <canvas id="circle-timer" width="220" height="220"></canvas>
+    <div class="adjust">
+      <button id="decrease">− 5 min</button>
+      <button id="increase">+ 5 min</button>
+    </div>
+    <div class="controls">
+      <button id="start">Start</button>
+      <button id="pause">Pause</button>
+      <button id="reset">Reset</button>
+      <button id="skip" class="skip">⏭️</button>
+    </div>
+    <p id="status">Focus Time</p>
+    <p id="sessions">Session Counter (so cool): <span id="count">0</span></p>
+    <div id="toast"></div>
+  </div>
+
+  <!-- Bottom Right Controls -->
+  <div class="bottom-controls">
+    <div class="color-picker-circle">
+      <input type="color" id="themeColor" value="#ff6b6b" />
+    </div>
+    <button id="modeToggle" class="mode-toggle">🌙</button>
+  </div>
+
+  <script>
+    /* ==== ALL JS ==== */
+    const canvas = document.getElementById('circle-timer');
+    const ctx = canvas.getContext('2d');
+    let totalTime = 40 * 60;
+    let remainingTime = totalTime;
+    let timer = null;
+    let isRunning = false;
+    let sessions = 0;
+    const statusText = document.getElementById('status');
+    const count = document.getElementById('count');
+    const toast = document.getElementById('toast');
+    const modeToggle = document.getElementById('modeToggle');
+    const themeColorPicker = document.getElementById('themeColor');
+    const namePopup = document.getElementById('namePopup');
+    const saveNameBtn = document.getElementById('saveName');
+    const greeting = document.getElementById('greeting');
+
+    function drawTimer() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const progress = remainingTime / totalTime;
+      ctx.beginPath();
+      ctx.arc(110, 110, 100, -Math.PI / 2, (2 * Math.PI * progress) - Math.PI / 2);
+      ctx.strokeStyle = themeColorPicker.value;
+      ctx.lineWidth = 10;
+      ctx.stroke();
+
+      ctx.font = '30px Segoe UI';
+      ctx.fillStyle = 'white';
+      const minutes = Math.floor(remainingTime / 60);
+      const seconds = remainingTime % 60;
+      ctx.textAlign = 'center';
+      ctx.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, 110, 120);
+    }
+    function updateTimer() {
+      if (remainingTime > 0) {
+        remainingTime--;
+        drawTimer();
+      } else {
+        clearInterval(timer);
+        isRunning = false;
+        sessions++;
+        count.textContent = sessions;
+        showToast("Next session started!");
+        resetTimer();
+      }
+    }
+    function startTimer() {
+      if (!isRunning) {
+        timer = setInterval(updateTimer, 1000);
+        isRunning = true;
+      }
+    }
+    function pauseTimer() {
+      clearInterval(timer);
+      isRunning = false;
+    }
+    function resetTimer() {
+      clearInterval(timer);
+      isRunning = false;
+      remainingTime = totalTime;
+      drawTimer();
+    }
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    document.getElementById('start').addEventListener('click', startTimer);
+    document.getElementById('pause').addEventListener('click', pauseTimer);
+    document.getElementById('reset').addEventListener('click', resetTimer);
+    document.getElementById('skip').addEventListener('click', () => {
+      sessions++;
+      count.textContent = sessions;
+      showToast("Skipped to next session!");
+      resetTimer();
+    });
+    document.getElementById('increase').addEventListener('click', () => {
+      totalTime += 5 * 60; remainingTime = totalTime; drawTimer();
+    });
+    document.getElementById('decrease').addEventListener('click', () => {
+      if (totalTime > 5 * 60) totalTime -= 5 * 60;
+      remainingTime = totalTime; drawTimer();
+    });
+    themeColorPicker.addEventListener('input', drawTimer);
+    modeToggle.addEventListener('click', () => document.body.classList.toggle('light'));
+    saveNameBtn.addEventListener('click', () => {
+      const name = document.getElementById('popupNameInput').value.trim();
+      if (name) greeting.textContent = `Hi ${name}, focus time!`;
+      namePopup.classList.remove('show');
+    });
+
+    window.addEventListener('load', () => {
+      namePopup.classList.add('show');
+      drawTimer();
+    });
+  </script>
+</body>
+</html>
